@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # gh-org-seed.sh — Org-level GitHub Projects (v2) seeder
-# This slice includes: auth/org preflight helper + robust dry-run planning/commands.log
-
 set -euo pipefail
 
 # Colors + logging helpers
@@ -40,9 +38,7 @@ Usage: ./gh-org-seed.sh \
 USAGE
 }
 
-# Flag vars
 START_DATE=""; SEED_DIR=""; ORG_NAME=""; PROJECT_NAME=""; PROJECT_ID=""; ORG_SHORTNAME=""
-
 enable_verbose() { [[ "$VERBOSE" == "1" ]] && set -x || true; }
 
 parse_args() {
@@ -93,25 +89,16 @@ validate_flags() {
   echo "$SEED_JSON" > "${OUT_DIR}/seed.path"
 }
 
-# --- logging helper
 CMDS_LOG="${OUT_DIR}/commands.log"; : > "${CMDS_LOG}"
 plan() { echo "$*" | tee -a "${CMDS_LOG}" >/dev/null; }
-
 run_mut() {
-  # Always log the exact command
   echo "$*" >> "$CMDS_LOG"
   if [[ "$DRY_RUN" == "1" ]]; then
-    log_info "[dry-run] $*"
-    return 0
+    log_info "[dry-run] $*"; return 0
   fi
-  set +e
-  eval "$@"
-  local rc=$?
-  set -e
-  return $rc
+  set +e; eval "$@"; local rc=$?; set -e; return $rc
 }
 
-# --- previous slice helpers ---
 validate_seed() {
   local SEED_JSON="$1"
   local SCHEMA="${SCRIPT_DIR}/schema/gh_seed.schema.json"
@@ -120,12 +107,9 @@ validate_seed() {
   if command -v npx >/dev/null 2>&1; then
     set +e
     npx --yes ajv-cli -s "$SCHEMA" -d "$SEED_JSON" > "${OUT_DIR}/ajv.out" 2> "${OUT_DIR}/ajv.err"
-    local rc=$?
-    set -e
+    local rc=$?; set -e
     if [[ $rc -eq 0 ]]; then
-      log_success "AJV validation passed"
-      cp "$SCHEMA" "${OUT_DIR}/schema/gh_seed.schema.json"
-      return 0
+      log_success "AJV validation passed"; cp "$SCHEMA" "${OUT_DIR}/schema/gh_seed.schema.json"; return 0
     else
       log_warning "AJV validation failed or Node missing; falling back to Python (${OUT_DIR}/ajv.err)"
     fi
@@ -134,49 +118,37 @@ validate_seed() {
   fi
   python3 "${SCRIPT_DIR}/python/validate_seed.py" "$SEED_JSON" > "${OUT_DIR}/validate_fallback.json" 2> "${OUT_DIR}/validate_fallback.err" || {
     log_error "Fallback validation failed; see ${OUT_DIR}/validate_fallback.err"; exit 3; }
-  log_success "Fallback validation passed"
-  cp "$SCHEMA" "${OUT_DIR}/schema/gh_seed.schema.json"
+  log_success "Fallback validation passed"; cp "$SCHEMA" "${OUT_DIR}/schema/gh_seed.schema.json"
 }
 
 compute_iterations() {
   local SEED_JSON="$1"
   log_info "Computing Sprint windows from start date and seed max sprint"
-  python3 "${SCRIPT_DIR}/python/compute_sprints.py" \
-    --start-date "$START_DATE" \
-    --cadence "$SPRINT_CADENCE_DAYS" \
-    --seed "$SEED_JSON" > "${OUT_DIR}/sprints.json"
-  local count
-  count=$(jq 'length' "${OUT_DIR}/sprints.json" 2>/dev/null || echo "0")
+  python3 "${SCRIPT_DIR}/python/compute_sprints.py" --start-date "$START_DATE" --cadence "$SPRINT_CADENCE_DAYS" --seed "$SEED_JSON" > "${OUT_DIR}/sprints.json"
+  local count; count=$(jq 'length' "${OUT_DIR}/sprints.json" 2>/dev/null || echo "0")
   log_success "Computed ${count} sprint window(s) → ${OUT_DIR}/sprints.json"
 }
 
-# --- new: auth + org permissions helper ---
+# auth helper
 ensure_auth_and_perms() {
-  # shellcheck source=/dev/null
   source "${SCRIPT_DIR}/scripts/ensure_auth.sh"
   ensure_scopes_and_org_perms "$ORG_NAME" "$YES" "$OUT_DIR"
-  if [[ -f "${OUT_DIR}/auth.warnings" ]]; then
-    log_warning "$(cat "${OUT_DIR}/auth.warnings")"
-  fi
+  [[ -f "${OUT_DIR}/auth.warnings" ]] && log_warning "$(cat "${OUT_DIR}/auth.warnings")"
   [[ -f "${OUT_DIR}/auth_summary.json" ]] && log_success "Auth summary captured → ${OUT_DIR}/auth_summary.json"
 }
 
-# --- project/fields/iterations ---
 ensure_project() {
   log_info "Ensuring org project exists or creating it if missing"
   local view_json="${OUT_DIR}/project.view.json"
   set +e
   gh project view "$PROJECT_ID" --owner "$ORG_NAME" --format json > "$view_json" 2> "${OUT_DIR}/project.view.err"
-  local rc=$?
-  set -e
+  local rc=$?; set -e
   if [[ $rc -eq 0 && -s "$view_json" ]]; then
-    PROJECT_EXISTS=1
-    log_success "Found project number $PROJECT_ID under '$ORG_NAME'"
+    PROJECT_EXISTS=1; log_success "Found project number $PROJECT_ID under '$ORG_NAME'"
   else
     log_warning "Project number $PROJECT_ID not found under '$ORG_NAME'. Searching by title: '$PROJECT_NAME'"
     gh project list --owner "$ORG_NAME" --format json > "${OUT_DIR}/project.list.json" || true
-    local found_number
-    found_number=$(jq -r --arg t "$PROJECT_NAME" '.projects[]? | select(.title==$t) | .number' "${OUT_DIR}/project.list.json" 2>/dev/null || echo "")
+    local found_number; found_number=$(jq -r --arg t "$PROJECT_NAME" '.projects[]? | select(.title==$t) | .number' "${OUT_DIR}/project.list.json" 2>/dev/null || echo "")
     if [[ -n "$found_number" && "$found_number" != "null" ]]; then
       PROJECT_ID="$found_number"; PROJECT_EXISTS=1
       gh project view "$PROJECT_ID" --owner "$ORG_NAME" --format json > "$view_json"
@@ -184,8 +156,7 @@ ensure_project() {
     else
       if [[ "$DRY_RUN" == "1" ]]; then
         plan "DRYRUN: gh project create --owner \"$ORG_NAME\" --title \"$PROJECT_NAME\""
-        PROJECT_EXISTS=0
-        PROJECT_NODE_ID="DRYRUN_PROJECT_NODE"
+        PROJECT_EXISTS=0; PROJECT_NODE_ID="DRYRUN_PROJECT_NODE"
         echo "{\"project_number\":\"$PROJECT_ID\",\"project_node_id\":\"$PROJECT_NODE_ID\"}" > "${OUT_DIR}/project.ids.json"
         return 0
       fi
@@ -201,8 +172,7 @@ ensure_project() {
       PROJECT_ID=$(jq -r --arg t "$PROJECT_NAME" '.projects[] | select(.title==$t) | .number' "${OUT_DIR}/project.list.post.json")
       [[ -n "$PROJECT_ID" && "$PROJECT_ID" != "null" ]] || die "Created project but could not resolve its number; check ${OUT_DIR}/project.list.post.json"
       gh project view "$PROJECT_ID" --owner "$ORG_NAME" --format json > "$view_json"
-      PROJECT_EXISTS=1
-      log_success "Created project '$PROJECT_NAME' → number $PROJECT_ID"
+      PROJECT_EXISTS=1; log_success "Created project '$PROJECT_NAME' → number $PROJECT_ID"
     fi
   fi
 
@@ -214,15 +184,12 @@ ensure_project() {
 }
 
 refresh_fields() {
-  if [[ "$DRY_RUN" == "1" && "$PROJECT_EXISTS" == "0" ]]; then
-    jq -n '{fields:[]}' > "${OUT_DIR}/fields.json"
-    return 0
-  fi
+  if [[ "$DRY_RUN" == "1" && "$PROJECT_EXISTS" == "0" ]]; then jq -n '{fields:[]}' > "${OUT_DIR}/fields.json"; return 0; fi
   gh project field-list "$PROJECT_ID" --owner "$ORG_NAME" --format json > "${OUT_DIR}/fields.json"
 }
 
-function field_id_by_name() { jq -r --arg n "$1" '.fields[]? | select(.name==$n) | .id' "${OUT_DIR}/fields.json"; }
-function option_id_by_name(){ jq -r --arg f "$1" --arg o "$2" '.fields[]? | select(.name==$f) | .options[]? | select(.name==$o) | .id' "${OUT_DIR}/fields.json"; }
+field_id_by_name() { jq -r --arg n "$1" '.fields[]? | select(.name==$n) | .id' "${OUT_DIR}/fields.json"; }
+option_id_by_name(){ jq -r --arg f "$1" --arg o "$2" '.fields[]? | select(.name==$f) | .options[]? | select(.name==$o) | .id' "${OUT_DIR}/fields.json"; }
 
 ensure_single_select_field() {
   local fname="$1"; local opts_csv="$2"
@@ -234,8 +201,7 @@ ensure_single_select_field() {
   if [[ -z "$fid" || "$fid" == "null" ]]; then
     log_info "Creating SINGLE_SELECT field '$fname' with options: $opts_csv"
     run_mut "gh project field-create \"$PROJECT_ID\" --owner \"$ORG_NAME\" --name \"$fname\" --data-type \"SINGLE_SELECT\" --single-select-options \"$opts_csv\" > \"${OUT_DIR}/field.create.$fname.out\" 2> \"${OUT_DIR}/field.create.$fname.err\""
-    refresh_fields
-    fid=$(field_id_by_name "$fname" || true)
+    refresh_fields; fid=$(field_id_by_name "$fname" || true)
     [[ -n "$fid" && "$fid" != "null" ]] || die "Failed to create field '$fname'"
     log_success "Field '$fname' created (id=$fid)"
   else
@@ -261,7 +227,6 @@ ensure_fields() {
     log_success "Wrote field map (dry-run placeholders) → ${OUT_DIR}/project_fields.json"
     return 0
   fi
-
   log_info "Ensuring custom fields (Priority, Size, Estimate)"
   refresh_fields || true
   ensure_single_select_field "Priority" "FIRE,High,Medium,Low,Nice to Have"
@@ -283,16 +248,24 @@ ensure_fields() {
   log_success "Wrote field map → ${OUT_DIR}/project_fields.json"
 }
 
+# -------- FIXED: ensure_iterations with proper union selections + early cfg write --------
 ensure_iterations() {
+  # Write cfg first so artifact exists even if GraphQL fails
+  local start_iso; start_iso=$(jq -r '.[0].startDate' "${OUT_DIR}/sprints.json")
+  local dur="$SPRINT_CADENCE_DAYS"
+  local cfg_json="${OUT_DIR}/iteration.cfg.json"
+  jq -n --arg start "$start_iso" --argjson duration "$dur" --slurpfile S "${OUT_DIR}/sprints.json" \
+    '{ startDate: $start, duration: $duration, iterations: ($S[0] | map({title:.title})) }' > "$cfg_json"
+
   if [[ "$DRY_RUN" == "1" && "$PROJECT_EXISTS" == "0" ]]; then
     log_info "[dry-run] Would create 'Sprint' iteration field and configure iterations"
-    local start_iso; start_iso=$(jq -r '.[0].startDate' "${OUT_DIR}/sprints.json")
-    local dur="$SPRINT_CADENCE_DAYS"
-    jq -n --arg start "$start_iso" --argjson duration "$dur" --slurpfile S "${OUT_DIR}/sprints.json" \
-      '{ startDate: $start, duration: $duration, iterations: ($S[0] | map({title:.title})) }' > "${OUT_DIR}/iteration.cfg.json"
     plan "DRYRUN: gh api graphql createProjectV2Field(name:\"Sprint\") and updateProjectV2Field(iterations)"
-    jq --arg id "DRYRUN_FIELD_Sprint" '. + { sprint: { id: $id } }' "${OUT_DIR}/project_fields.json" > "${OUT_DIR}/project_fields.tmp" && mv "${OUT_DIR}/project_fields.tmp" "${OUT_DIR}/project_fields.json"
-    log_success "Prepared iteration cfg (dry-run) → ${OUT_DIR}/iteration.cfg.json"
+    # annotate placeholder id into project_fields.json if it exists
+    if [[ -f "${OUT_DIR}/project_fields.json" ]]; then
+      jq --arg id "DRYRUN_FIELD_Sprint" '. + { sprint: { id: $id } }' "${OUT_DIR}/project_fields.json" \
+        > "${OUT_DIR}/project_fields.tmp" && mv "${OUT_DIR}/project_fields.tmp" "${OUT_DIR}/project_fields.json"
+    fi
+    log_success "Prepared iteration cfg (dry-run) → ${cfg_json}"
     return 0
   fi
 
@@ -302,7 +275,19 @@ ensure_iterations() {
 
   if [[ -z "$sprint_field_id" || "$sprint_field_id" == "null" ]]; then
     log_info "Creating iteration field 'Sprint' via GraphQL"
-    local create_q='mutation($pid:ID!){ createProjectV2Field(input:{projectId:$pid, dataType:ITERATION, name:"Sprint"}){ projectV2Field { id name } } }'
+    # Use fragments to select on union type
+    read -r -d '' create_q <<'GQL'
+mutation($pid:ID!){
+  createProjectV2Field(input:{projectId:$pid, dataType:ITERATION, name:"Sprint"}){
+    projectV2Field {
+      __typename
+      ... on ProjectV2IterationField { id name }
+      ... on ProjectV2SingleSelectField { id name }
+      ... on ProjectV2Field { id name }
+    }
+  }
+}
+GQL
     if [[ "$DRY_RUN" == "1" ]]; then
       log_info "[dry-run] gh api graphql createProjectV2Field Sprint"
     else
@@ -316,65 +301,51 @@ ensure_iterations() {
     log_success "Iteration field 'Sprint' exists (id=$sprint_field_id)"
   fi
 
-  local start_iso; start_iso=$(jq -r '.[0].startDate' "${OUT_DIR}/sprints.json")
-  local dur="$SPRINT_CADENCE_DAYS"
-  local cfg_json="${OUT_DIR}/iteration.cfg.json"
-  jq -n --arg start "$start_iso" --argjson duration "$dur" --slurpfile S "${OUT_DIR}/sprints.json" \
-    '{ startDate: $start, duration: $duration, iterations: ($S[0] | map({title:.title})) }' > "$cfg_json"
-
   log_info "Updating 'Sprint' iteration configuration (start=$start_iso, duration=$dur)"
-  local update_q='mutation($pid:ID!, $fid:ID!, $cfg:ProjectV2IterationFieldConfigurationInput!){
-    updateProjectV2Field(input:{ projectId:$pid, fieldId:$fid, iterationConfiguration:$cfg }) {
-      projectV2Field { id name }
-    }
-  }'
+  read -r -d '' update_q <<'GQL'
+mutation($pid:ID!, $fid:ID!, $cfg:ProjectV2IterationFieldConfigurationInput!){
+  updateProjectV2Field(input:{ projectId:$pid, fieldId:$fid, iterationConfiguration:$cfg }) {
+    projectV2Field { __typename }
+  }
+}
+GQL
   if [[ "$DRY_RUN" == "1" ]]; then
     log_info "[dry-run] gh api graphql updateProjectV2Field with $(jq -c . "$cfg_json")"
   else
     gh api graphql -f query="$update_q" -F pid="$PROJECT_NODE_ID" -F fid="$sprint_field_id" --raw-field cfg="$(cat "$cfg_json")" > "${OUT_DIR}/sprint.update.json"
   fi
 
-  jq --arg id "$sprint_field_id" '. + { sprint: { id: $id } }' "${OUT_DIR}/project_fields.json" > "${OUT_DIR}/project_fields.tmp" && mv "${OUT_DIR}/project_fields.tmp" "${OUT_DIR}/project_fields.json"
+  # persist sprint field id in our field map if present
+  if [[ -f "${OUT_DIR}/project_fields.json" ]]; then
+    jq --arg id "$sprint_field_id" '. + { sprint: { id: $id } }' "${OUT_DIR}/project_fields.json" \
+      > "${OUT_DIR}/project_fields.tmp" && mv "${OUT_DIR}/project_fields.tmp" "${OUT_DIR}/project_fields.json"
+  fi
   log_success "Sprint configuration applied (or planned in dry-run)"
 }
+# -----------------------------------------------------------------------------------------
 
 summarize() {
   local SEED_JSON="$1"
   local sprint_count; sprint_count=$(jq 'length' "${OUT_DIR}/sprints.json" 2>/dev/null || echo "0")
-  jq -n \
-    --arg start_date "$START_DATE" \
-    --arg cadence "$SPRINT_CADENCE_DAYS" \
-    --arg seed "$SEED_JSON" \
-    --arg out_dir "$OUT_DIR" \
-    --arg org "$ORG_NAME" \
-    --arg project_name "$PROJECT_NAME" \
-    --arg project_id "$PROJECT_ID" \
-    --arg project_node_id "${PROJECT_NODE_ID:-TBD}" \
-    --argjson sprint_count "$sprint_count" \
-    '{run: {org:$org, project:{name:$project_name, number:$project_id, node_id:$project_node_id}, start_date:$start_date, cadence_days:($cadence|tonumber), seed:$seed, out_dir:$out_dir, sprint_count:$sprint_count}}' \
-    > "${OUT_DIR}/summary.json"
+  jq -n --arg start_date "$START_DATE" --arg cadence "$SPRINT_CADENCE_DAYS" --arg seed "$SEED_JSON" \
+        --arg out_dir "$OUT_DIR" --arg org "$ORG_NAME" --arg project_name "$PROJECT_NAME" \
+        --arg project_id "$PROJECT_ID" --arg project_node_id "${PROJECT_NODE_ID:-TBD}" \
+        --argjson sprint_count "$sprint_count" \
+        '{run: {org:$org, project:{name:$project_name, number:$project_id, node_id:$project_node_id}, start_date:$start_date, cadence_days:($cadence|tonumber), seed:$seed, out_dir:$out_dir, sprint_count:$sprint_count}}' \
+        > "${OUT_DIR}/summary.json"
   log_success "Wrote summary → ${OUT_DIR}/summary.json"
 }
 
 main() {
-  parse_args "$@"
-  enable_verbose
-  check_prereqs
-  validate_flags
-  ensure_auth_and_perms
-
+  parse_args "$@"; enable_verbose; check_prereqs; validate_flags; ensure_auth_and_perms
   local SEED_JSON="${SEED_DIR%/}/gh_seed.json"
   validate_seed "$SEED_JSON"
   compute_iterations "$SEED_JSON"
-
   ensure_project
   ensure_fields
   ensure_iterations
-
   summarize "$SEED_JSON"
-
-  log_success "Slice complete: auth checked, project ensured (or planned), fields upserted (or planned), Sprint iterations configured (or planned)."
+  log_success "Slice complete: project ensured, fields upserted, Sprint iterations configured."
   log_info "Artifacts: ${OUT_DIR}"
 }
-
 main "$@"
