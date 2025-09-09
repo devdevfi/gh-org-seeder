@@ -325,8 +325,6 @@ ensure_iterations() {
   log_success "Sprint configuration applied (or planned in dry-run)"
 }
 
-  log_success "Sprint configuration applied (or planned in dry-run)"
-}
 # -----------------------------------------------------------------------------------------
 
 summarize() {
