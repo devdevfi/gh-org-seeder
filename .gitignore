@@ -22,3 +22,4 @@ __pycache__/
 
 # Ignore private seeds for testing
 seeds/acme/gh_seed.json
+scripts/test.sh
