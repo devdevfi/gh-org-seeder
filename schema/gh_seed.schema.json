@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Org Seeder Seed File (placeholder)",
+  "type": "object",
+  "properties": {
+    "repos": { "type": "array" },
+    "milestones": { "type": "array" },
+    "epics": { "type": "array" },
+    "issues": { "type": "array" }
+  },
+  "additionalProperties": true
+}

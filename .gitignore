@@ -1,0 +1,21 @@
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
+
+# Env & outputs
+.env
+.out/
+logs/
+*.log
+
+# Node / Python
+node_modules/
+dist/
+coverage/
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Misc
+*.tmp
