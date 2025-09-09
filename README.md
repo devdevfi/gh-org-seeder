@@ -19,3 +19,19 @@ Run: ./gh-org-seed.sh --help
 
 ## Next step
 Step 2 will add preflight checks, flag parsing, and seed validation.
+
+## Usage
+
+```bash
+Usage: ./gh-org-seed.sh \
+  --start-date "MM/DD/YYYY" \
+  --seed-file <dir> \
+  --org-name <org> \
+  --project-name <string> \
+  --project-id <number> \
+  [--org-shortname <SHORT>] \
+  [--sprint-cadence-days <int>] \
+  [--visibility internal|private] \
+  [--dry-run] [--yes] [--verbose] \
+  [--help]
+```
