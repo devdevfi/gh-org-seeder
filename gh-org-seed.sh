@@ -250,43 +250,81 @@ ensure_fields() {
 
 # -------- FIXED: ensure_iterations with proper union selections + early cfg write --------
 ensure_iterations() {
-  # Write cfg first so artifact exists even if GraphQL fails
-  local start_iso; start_iso=$(jq -r '.[0].startDate' "${OUT_DIR}/sprints.json")
-  local dur="$SPRINT_CADENCE_DAYS"
-  local cfg_json="${OUT_DIR}/iteration.cfg.json"
-  jq -n --arg start "$start_iso" --argjson duration "$dur" --slurpfile S "${OUT_DIR}/sprints.json" \
-    '{ startDate: $start, duration: $duration, iterations: ($S[0] | map({title:.title})) }' > "$cfg_json"
-
-  if [[ "$DRY_RUN" == "1" && "$PROJECT_EXISTS" == "0" ]]; then
-    log_info "[dry-run] Would create 'Sprint' iteration field and configure iterations"
-    plan "DRYRUN: gh api graphql createProjectV2Field(name:\"Sprint\") and updateProjectV2Field(iterations)"
-    # annotate placeholder id into project_fields.json if it exists
-    if [[ -f "${OUT_DIR}/project_fields.json" ]]; then
-      jq --arg id "DRYRUN_FIELD_Sprint" '. + { sprint: { id: $id } }' "${OUT_DIR}/project_fields.json" \
-        > "${OUT_DIR}/project_fields.tmp" && mv "${OUT_DIR}/project_fields.tmp" "${OUT_DIR}/project_fields.json"
-    fi
-    log_success "Prepared iteration cfg (dry-run) → ${cfg_json}"
-    return 0
-  fi
-
   log_info "Ensuring Iteration field 'Sprint' and configuring windows"
+
   refresh_fields || true
-  local sprint_field_id; sprint_field_id=$(field_id_by_name "Sprint" || true)
+  local sprint_field_id
+  sprint_field_id=$(field_id_by_name "Sprint" || true)
 
   if [[ -z "$sprint_field_id" || "$sprint_field_id" == "null" ]]; then
     log_info "Creating iteration field 'Sprint' via GraphQL"
-    # Use fragments to select on union type
-    read -r -d '' create_q <<'GQL'
-mutation($pid:ID!){
-  createProjectV2Field(input:{projectId:$pid, dataType:ITERATION, name:"Sprint"}){
-    projectV2Field {
-      __typename
-      ... on ProjectV2IterationField { id name }
-      ... on ProjectV2SingleSelectField { id name }
-      ... on ProjectV2Field { id name }
+    local create_mut
+    create_mut='mutation CreateIterationField($projectId:ID!){
+      createProjectV2Field(input:{projectId:$projectId, dataType:ITERATION, name:"Sprint"}) {
+        projectV2Field { id name }
+      }
+    }'
+    if [[ "$DRY_RUN" == "1" ]]; then
+      log_info "[dry-run] gh api graphql createProjectV2Field Sprint"
+    else
+      gh api graphql -H "GraphQL-Features: projects_next_graphql" \
+        -f query="$create_mut" \
+        -F projectId="$PROJECT_NODE_ID" \
+        > "${OUT_DIR}/sprint.create.json" 2> "${OUT_DIR}/sprint.create.err" || {
+          log_error "Failed to create Sprint field; see ${OUT_DIR}/sprint.create.err"
+          return 1
+        }
+      refresh_fields
+      sprint_field_id=$(field_id_by_name "Sprint" || true)
+      [[ -n "$sprint_field_id" && "$sprint_field_id" != "null" ]] || die "Sprint field creation succeeded but id not found"
+      log_success "Iteration field 'Sprint' created (id=$sprint_field_id)"
+    fi
+  else
+    log_success "Iteration field 'Sprint' exists (id=$sprint_field_id)"
+  fi
+
+  # Build iteration configuration payload from sprints.json
+  local start_iso dur cfg_json
+  start_iso=$(jq -r '.[0].startDate' "${OUT_DIR}/sprints.json")
+  dur="$SPRINT_CADENCE_DAYS"
+  cfg_json="${OUT_DIR}/iteration.cfg.json"
+  jq -n \
+    --arg start "$start_iso" \
+    --argjson duration "$dur" \
+    --slurpfile S "${OUT_DIR}/sprints.json" \
+    '{ startDate: $start, duration: $duration, iterations: ($S[0] | map({title:.title})) }' > "$cfg_json"
+
+  log_info "Updating 'Sprint' iteration configuration (start=$start_iso, duration=$dur)"
+  local update_mut
+  update_mut='mutation UpdateIterationCfg($projectId:ID!, $fieldId:ID!, $config: ProjectV2IterationFieldConfigurationInput!){
+    updateProjectV2Field(input:{ projectId:$projectId, fieldId:$fieldId, iterationConfiguration:$config }) {
+      projectV2Field { id name }
     }
-  }
+  }'
+
+  if [[ "$DRY_RUN" == "1" ]]; then
+    log_info "[dry-run] gh api graphql updateProjectV2Field with config: $(jq -c . "$cfg_json")"
+  else
+    gh api graphql -H "GraphQL-Features: projects_next_graphql" \
+      -f query="$update_mut" \
+      -F projectId="$PROJECT_NODE_ID" \
+      -F fieldId="$sprint_field_id" \
+      --raw-field config="$(cat "$cfg_json")" \
+      > "${OUT_DIR}/sprint.update.json" 2> "${OUT_DIR}/sprint.update.err" || {
+        log_error "Failed to update Sprint iterations; see ${OUT_DIR}/sprint.update.err"
+        return 1
+      }
+  fi
+
+  # Persist Sprint field id in the field map
+  if [[ -f "${OUT_DIR}/project_fields.json" ]]; then
+    jq --arg id "$sprint_field_id" '. + { sprint: { id: $id } }' "${OUT_DIR}/project_fields.json" > "${OUT_DIR}/project_fields.tmp" && mv "${OUT_DIR}/project_fields.tmp" "${OUT_DIR}/project_fields.json"
+  else
+    echo "{\"sprint\":{\"id\":\"$sprint_field_id\"}}" > "${OUT_DIR}/project_fields.json"
+  fi
+  log_success "Sprint configuration applied (or planned in dry-run)"
 }
+
 GQL
     if [[ "$DRY_RUN" == "1" ]]; then
       log_info "[dry-run] gh api graphql createProjectV2Field Sprint"
