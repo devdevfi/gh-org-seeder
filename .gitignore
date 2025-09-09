@@ -19,3 +19,6 @@ __pycache__/
 
 # Misc
 *.tmp
+
+# Ignore private seeds for testing
+seeds/acme/gh_seed.json

@@ -1,12 +1,383 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Org Seeder Seed File (placeholder)",
+  "$id": "https://gh-seeder.dev/schema/gh_seed.schema.v1.json",
+  "title": "GitHub Org Seeder (Projects v2 • Repos • Milestones • Epics • Issues)",
   "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version"
+  ],
   "properties": {
-    "repos": { "type": "array" },
-    "milestones": { "type": "array" },
-    "epics": { "type": "array" },
-    "issues": { "type": "array" }
-  },
-  "additionalProperties": true
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "org": {
+      "type": "object",
+      "required": [
+        "name",
+        "shortname",
+        "planning_repo_name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "shortname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "planning_repo_name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "internal",
+            "private"
+          ]
+        },
+        "assignee": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "project": {
+      "type": "object",
+      "required": [
+        "title",
+        "fields"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "object",
+          "required": [
+            "priority",
+            "size",
+            "estimate",
+            "sprint"
+          ],
+          "properties": {
+            "priority": {
+              "type": "object",
+              "required": [
+                "type",
+                "options"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "SINGLE_SELECT"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "FIRE",
+                      "High",
+                      "Medium",
+                      "Low",
+                      "Nice to Have"
+                    ]
+                  },
+                  "minItems": 5,
+                  "maxItems": 5
+                },
+                "default": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "size": {
+              "type": "object",
+              "required": [
+                "type",
+                "options"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "SINGLE_SELECT"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "XS",
+                      "S",
+                      "M",
+                      "L",
+                      "XL"
+                    ]
+                  },
+                  "minItems": 5,
+                  "maxItems": 5
+                }
+              },
+              "additionalProperties": false
+            },
+            "estimate": {
+              "type": "object",
+              "required": [
+                "type",
+                "options"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "SINGLE_SELECT"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "1",
+                      "2",
+                      "3"
+                    ]
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              },
+              "additionalProperties": false
+            },
+            "sprint": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "ITERATION"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "repos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "internal",
+              "private"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "uniqueItems": true
+    },
+    "milestones": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "due_on": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "epics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "title"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "milestone": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "uniqueItems": false
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "title"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "story",
+              "bug"
+            ]
+          },
+          "epic_key": {
+            "type": "string"
+          },
+          "sprint": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "FIRE",
+              "High",
+              "Medium",
+              "Low",
+              "Nice to Have"
+            ]
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "1",
+                  "2",
+                  "3"
+                ]
+              },
+              {
+                "type": "integer",
+                "enum": [
+                  1,
+                  2,
+                  3
+                ]
+              }
+            ]
+          },
+          "size": {
+            "type": "string",
+            "enum": [
+              "XS",
+              "S",
+              "M",
+              "L",
+              "XL"
+            ]
+          },
+          "work_repo": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "lay_summary": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "acceptance_criteria": {
+            "type": "string"
+          },
+          "dod": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocked_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "taxonomy": {
+      "type": "object",
+      "properties": {
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
 }

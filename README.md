@@ -9,29 +9,34 @@ Primary entrypoint: ./gh-org-seed.sh
 - Size: L
 - Points: 3
 
-## Quick start
-Run: ./gh-org-seed.sh --help
+## What’s implemented in Step 2
+- Preflight: version checks and gh auth
+- CLI flags parsing and validation
+- Seed validation: AJV via npx (primary) with Python fallback
+- Sprint window computation from --start-date and highest sprint in gh_seed.json
+- Run artifacts in ./.out/<timestamp> including sprints.json and summary.json
 
-## Environment
-- macOS + zsh/bash 5.2+
+## Requirements
+- macOS with bash 5.2+ or zsh
 - gh CLI v2.78.0+
-- jq, python3, git
-
-## Next step
-Step 2 will add preflight checks, flag parsing, and seed validation.
+- python3, jq
+- Node+npx optional (for AJV); Python fallback included
 
 ## Usage
+Run: ./gh-org-seed.sh --help
 
-```bash
-Usage: ./gh-org-seed.sh \
-  --start-date "MM/DD/YYYY" \
-  --seed-file <dir> \
-  --org-name <org> \
-  --project-name <string> \
-  --project-id <number> \
-  [--org-shortname <SHORT>] \
-  [--sprint-cadence-days <int>] \
-  [--visibility internal|private] \
-  [--dry-run] [--yes] [--verbose] \
-  [--help]
-```
+Example:
+./gh-org-seed.sh --start-date "11/05/2025" --seed-file ./seeds/acme --org-name acme-corp --project-name "ACME Delivery" --project-id 1 --org-shortname ACME --sprint-cadence-days 14 --verbose
+
+## Validating locally (this slice)
+1. Place your seed file at ./seeds/acme/gh_seed.json
+2. Ensure schema exists at ./schema/gh_seed.schema.json (already included)
+3. Run:
+   ./gh-org-seed.sh --start-date "11/05/2025" --seed-file ./seeds/acme --org-name acme-corp --project-name "ACME Delivery" --project-id 1 --org-shortname ACME --sprint-cadence-days 14
+4. Expected:
+   - "AJV validation passed" or "Fallback validation passed"
+   - ./.out/<timestamp>/sprints.json exists with titles Sprint 1..N and ISO dates on Wednesdays
+   - ./.out/<timestamp>/summary.json contains run metadata
+
+## Next steps
+Step 3 will create/reuse the org-level Project and upsert fields (Priority, Size, Estimate, Sprint), using the computed sprint windows.
